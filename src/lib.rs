@@ -47,7 +47,7 @@ impl InstallSet {
 
 #[derive(Debug)]
 struct Install {
-    name:   OsString,
+    name:   String,
     flags:  Vec<InstallFlag>,
 }
 
@@ -58,11 +58,11 @@ impl Install {
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
 struct InstallFlag {
-    flag: OsString,
-    args: Vec<OsString>,
+    flag: String,
+    args: Vec<String>,
 }
 impl InstallFlag {
-    fn new(flag: impl Into<OsString>, args: Vec<OsString>) -> Self { Self { flag: flag.into(), args } }
+    fn new(flag: impl Into<String>, args: Vec<String>) -> Self { Self { flag: flag.into(), args } }
 }
 
 /// Run an install after reading the executable name / subcommand.
@@ -128,7 +128,9 @@ pub fn run_from_args_os_after_exe(args: ArgsOs) -> Result<(), Error> {
 /// # Ok(())
 /// # }
 /// ```
-pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsStr>>(args: Args) -> Result<(), Error> {
+pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsStr>>(
+    args: Args,
+) -> Result<(), Error> {
     let start = std::time::Instant::now();
 
     let (maj, min, pat, stable) = Command::new("cargo").arg("--version").stderr(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).output().map_or((0, 0, 0, false), |o|{
@@ -169,12 +171,11 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
     let mut path        = None;
 
     let mut options     = Vec::<InstallFlag>::new(); // will get reordered for improved caching
-    let mut crates      = Vec::<OsString>::new();
+    let mut crates      = Vec::<String>::new();
 
     while let Some(arg) = args.next() {
-        let arg = arg.into();
-        let lossy = arg.to_string_lossy();
-        match &*lossy {
+        let arg: String = arg.as_ref().to_string_lossy().to_string();
+        match &arg[..] {
             "--help"        => return help(),
             //"--version"     => return version(), // XXX: Conflicts with version selection flag
 
@@ -219,17 +220,17 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
             "--index" | "--registry" |
             "--color"
             => {
-                let arg2 = args.next().ok_or_else(|| error!(None, "{} requires an argument", lossy))?.into();
+                let arg2 = args.next().ok_or_else(|| error!(None, "{} requires an argument", arg))?.as_ref().to_string_lossy().to_string();
                 options.push(InstallFlag::new(arg, vec![arg2]));
             },
 
             // pass-through multi-arg commands
-            "--features"    => return Err(error!(None, "not yet implemented: {}", lossy)),
-            "--bin"         => return Err(error!(None, "not yet implemented: {}", lossy)),
-            "--example"     => return Err(error!(None, "not yet implemented: {}", lossy)),
+            "--features"    => return Err(error!(None, "not yet implemented: {}", arg)),
+            "--bin"         => return Err(error!(None, "not yet implemented: {}", arg)),
+            "--example"     => return Err(error!(None, "not yet implemented: {}", arg)),
 
             "--" => {
-                crates.extend(args.map(|a| a.into()));
+                crates.extend(args.map(|a| a.as_ref().to_string_lossy().to_string()));
                 break;
             },
 
@@ -272,8 +273,11 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
     let crates_cache_dir = global_dir.join("crates");
 
     let target_dir = target_dir.map_or_else(|| Ok(global_dir.join("target")), canonicalize)?;
-    options.push(InstallFlag::new("--target-dir", vec![target_dir.into()]));
-    if let Some(path) = path { options.push(InstallFlag::new("--path", vec![canonicalize(path)?.into()])); }
+    options.push(InstallFlag::new(
+        "--target-dir",
+        vec![target_dir.to_string_lossy().to_string()],
+    ));
+    if let Some(path) = path { options.push(InstallFlag::new("--path", vec![canonicalize(path)?.to_string_lossy().to_string()])); }
     options.sort();
 
     for set in installs.iter_mut() {
@@ -358,7 +362,7 @@ impl Install {
         let mut cmd = Command::new("cargo");
         cmd.arg("install");
         for InstallFlag { flag, args } in self.flags {
-            write!(&mut trace, " {}", flag.to_str().unwrap()).unwrap();
+            write!(&mut trace, " {}", flag).unwrap();
             cmd.arg(flag);
             for arg in args.into_iter() {
                 write!(&mut trace, " {:?}", arg).unwrap();
@@ -368,7 +372,7 @@ impl Install {
 
         let hash = {
             // real trace will have "--root ...", but that depends on hash!
-            let trace_for_hash = format!("{} -- {}", trace, self.name.to_string_lossy());
+            let trace_for_hash = format!("{} -- {}", trace, self.name);
             #[allow(deprecated)] let mut hasher = std::hash::SipHasher::new();
             trace_for_hash.hash(&mut hasher);
             format!("{:016x}", hasher.finish())
@@ -387,7 +391,7 @@ impl Install {
         }
 
         trace.push_str(" -- ");
-        trace.push_str(&self.name.to_string_lossy());
+        trace.push_str(&self.name);
         cmd.arg("--");
         cmd.arg(self.name);
 
