@@ -308,19 +308,30 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
         if set.installs.is_empty() { continue }
         assert!(any_local || any_remote);
 
-        // hash set and convert it to a string
-        let mut hasher = DefaultHasher::new();
-        set.hash(&mut hasher);
-        let hash = hasher.finish();
+        let cache_path = {
+            // hash set and convert it to a string
+            let mut hasher = DefaultHasher::new();
+            set.hash(&mut hasher);
+            let hash = hasher.finish();
 
-        // use the set hash to create a cache file
-        let built = set.bin.join(format!(".built_{:x}", hash));
+            // use the set hash to create a cache file
+            let cache_name = format!(
+                "built-{}-{:x}",
+                set.installs
+                    .iter()
+                    .map(|install| install.name.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("-"),
+                hash
+            );
+            set.bin.join(".cache").join(cache_name)
+        };
 
         let up_to_date = if !any_remote {
             false
         } else if let Some(src) = set.src.as_ref() {
             let src_mod = src.metadata().ok().and_then(|m| m.modified().ok());
-            let built_mod = built.metadata().ok().and_then(|m| m.modified().ok());
+            let built_mod = cache_path.metadata().ok().and_then(|m| m.modified().ok());
 
             let up_to_date = match (src_mod, built_mod) {
                 (Some(src), Some(built))    => src < built,
@@ -352,7 +363,8 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
             first_install = false;
         }
         if any_remote && set.src.is_some() {
-            std::fs::write(&built, "").map_err(|err| error!(err, "unable to create {}: {}", built.display(), err))?;
+            std::fs::create_dir_all(cache_path.parent().expect("Has parent")).map_err(|err| error!(err, "unable to create cache directory"))?;
+            std::fs::write(&cache_path, "").map_err(|err| error!(err, "unable to create {}: {}", cache_path.display(), err))?;
         }
     }
 
