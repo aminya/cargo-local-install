@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
+#![allow(clippy::needless_doctest_main)]
 
-#[macro_use] mod macros;
-#[cfg(    feature = "manifest") ] mod manifest;
-#[cfg(not(feature = "manifest"))] mod manifest { pub(super) fn find_cwd_installs(_maybe_dst_bin: Option<std::path::PathBuf>) -> Result<Vec<crate::InstallSet>, crate::Error> { Ok(Vec::new()) } }
+#[macro_use]mod macros;
+#[cfg(    feature = "manifest") ]mod manifest;
+#[cfg(not(feature = "manifest"))]mod manifest { pub(super) fn find_cwd_installs(_maybe_dst_bin: Option<std::path::PathBuf>) -> Result<Vec<crate::InstallSet>, crate::Error> { Ok(Vec::new()) } }
 
 use std::env::ArgsOs;
 use std::fmt::{self, Display, Debug, Formatter, Write as _};
@@ -270,7 +271,7 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
     };
     let crates_cache_dir = global_dir.join("crates");
 
-    let target_dir = target_dir.map_or_else(|| Ok(global_dir.join("target")), |td| canonicalize(td))?;
+    let target_dir = target_dir.map_or_else(|| Ok(global_dir.join("target")), canonicalize)?;
     options.push(InstallFlag::new("--target-dir", vec![target_dir.into()]));
     if let Some(path) = path { options.push(InstallFlag::new("--path", vec![canonicalize(path)?.into()])); }
     options.sort();
@@ -313,9 +314,7 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
 
         let mut first_install = true;
         for install in set.installs.into_iter() {
-            if install.is_remote() {
-                if up_to_date { continue }
-            }
+            if install.is_remote() && up_to_date { continue }
             let context = Context {
                 dry_run, quiet, verbose,
                 z_no_index_update_hack: z_no_index_update_hack && !first_install,
@@ -355,7 +354,7 @@ impl Install {
     fn install(self, context: Context) -> Result<(), Error> {
         let Context { dry_run, quiet, verbose, z_no_index_update_hack, crates_cache_dir, dst_bin } = context;
 
-        let mut trace = format!("cargo install");
+        let mut trace = "cargo install".to_string();
         let mut cmd = Command::new("cargo");
         cmd.arg("install");
         for InstallFlag { flag, args } in self.flags {
@@ -411,7 +410,7 @@ impl Install {
             None    => return Err(error!(None, "{} failed (signal)", trace)),
         }
 
-        if let Err(err) = std::fs::create_dir_all(&dst_bin) {
+        if let Err(err) = std::fs::create_dir_all(dst_bin) {
             if !quiet {
                 warnln!("Unable to create directory `{}`: {}", dst_bin.display(), err);
             }
@@ -466,7 +465,7 @@ struct Ignore {
     post:   &'static str,
 }
 
-static IGNORE : &'static [Ignore] = &[
+static IGNORE : &[Ignore] = &[
     // We spam reinstalls for already installed stuff
     Ignore { pre: "     Ignored package `", post: "` is already installed, use --force to override", prec: "\u{1b}[0m\u{1b}[0m\u{1b}[1m\u{1b}[32m     Ignored\u{1b}[0m package `" },
 

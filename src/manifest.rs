@@ -24,7 +24,7 @@ pub(super) fn find_cwd_installs(maybe_dst_bin: Option<PathBuf>) -> Result<Vec<In
             for has_meta in vec![file.toml.workspace, file.toml.package].into_iter().flatten() {
                 for (name, InstallData { package, locked, source, default_features, features }) in has_meta.metadata.local_install.into_iter() {
                     installs.push({
-                        let name = OsStr::new(package.as_ref().map(|p| p.as_str()).unwrap_or(&name));
+                        let name = OsStr::new(package.as_deref().unwrap_or(&name));
                         let mut flags = match source {
                             InstallSource::Local { path }                                   => vec![ InstallFlag::new("--path", vec![dir.join(path).into()]) ],
                             InstallSource::Git { git }                                      => vec![ InstallFlag::new("--git", vec![git.into()]) ],
@@ -338,7 +338,7 @@ impl File {
 
 fn fix_version(v: &str) -> Cow<OsStr> {
     let first = v.chars().next().unwrap_or('\0');
-    if ('0'..='9').contains(&first) {
+    if first.is_ascii_digit() {
         OsString::from(format!("^{}", v)).into()
     } else {
         OsStr::new(v).into()
