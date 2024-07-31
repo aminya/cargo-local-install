@@ -15,12 +15,12 @@ use std::process::{Command, Stdio};
 
 
 /// An opaque `cargo-local-install` error, currently meant for [Display] only.
-pub struct Error(String, Option<Inner>);
+pub struct Error(pub String, pub Option<Inner>);
 impl Display for Error { fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { write!(fmt, "{}", self.0) } }
 impl Debug   for Error { fn fmt(&self, fmt: &mut Formatter) -> fmt::Result { write!(fmt, "Error({:?})", self.0) } }
 impl std::error::Error for Error {}
 
-enum Inner { Io(io::Error) }
+pub enum Inner { Io(io::Error) }
 impl From<io::Error> for Inner { fn from(err: io::Error) -> Self { Inner::Io(err) } }
 
 
