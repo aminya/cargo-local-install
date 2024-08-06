@@ -488,11 +488,14 @@ impl Install {
         let src_bins = src_bin_path.read_dir().map_err(|err| error!(err, "unable to enumerate source bins at {}: {}", src_bin_path.display(), err))?;
 
         for src_bin in src_bins {
+            println!("src_bin: {:?}", src_bin);
             let src_bin = src_bin.map_err(|err| error!(err, "error enumerating source bins at {}: {}", src_bin_path.display(), err))?;
             let dst_bin = dst_bin.join(src_bin.file_name());
             let file_type = src_bin.file_type().map_err(|err| error!(err, "error determining file type for {}: {}", src_bin.path().display(), err))?;
             if !file_type.is_file() { continue }
             let src_bin = src_bin.path();
+
+            println!("Replacing: {:?}", dst_bin);
 
             if verbose { statusln!("Replacing", "`{}`", dst_bin.display()) }
             #[cfg(windows)] {
