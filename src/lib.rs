@@ -355,13 +355,18 @@ pub fn run_from_strs<Args: Iterator<Item = Arg>, Arg: Into<OsString> + AsRef<OsS
 
         let mut first_install = true;
         for install in set.installs.into_iter() {
-            if install.is_remote() && up_to_date { continue }
             let context = Context {
                 dry_run, quiet, verbose,
                 z_no_index_update_hack: z_no_index_update_hack && !first_install,
                 crates_cache_dir: crates_cache_dir.as_path(),
                 dst_bin: set.bin.as_path()
             };
+            if install.is_remote() && up_to_date {
+                // Copy bins from cache
+                let krate_build_dir = install.crate_build_dir("copy bins", &crates_cache_dir);
+                Install::copy_bins(context, &krate_build_dir)?;
+                continue;
+             }
             install.install(context)?;
             first_install = false;
         }
@@ -394,9 +399,11 @@ struct Context<'a> {
 
 impl Install {
     fn install(self, context: Context) -> Result<(), Error> {
-        let Context { dry_run, quiet, verbose, z_no_index_update_hack, crates_cache_dir, dst_bin } = context;
-
+        let Context { dry_run, verbose, z_no_index_update_hack, crates_cache_dir, ..} = context;
         let mut trace = "cargo install".to_string();
+
+        let krate_build_dir = self.crate_build_dir(&trace, crates_cache_dir);
+
         let mut cmd = Command::new("cargo");
         cmd.arg("install");
         for InstallFlag { flag, args } in self.flags {
@@ -408,15 +415,6 @@ impl Install {
             }
         }
 
-        let hash = {
-            // real trace will have "--root ...", but that depends on hash!
-            let trace_for_hash = format!("{} -- {}", trace, self.name);
-            #[allow(deprecated)] let mut hasher = std::hash::SipHasher::new();
-            trace_for_hash.hash(&mut hasher);
-            format!("{:016x}", hasher.finish())
-        };
-
-        let krate_build_dir = crates_cache_dir.join(hash);
         write!(&mut trace, " --root {:?}", krate_build_dir.display()).unwrap();
         cmd.arg("--root").arg(&krate_build_dir);
 
@@ -452,6 +450,33 @@ impl Install {
             None    => return Err(error!(None, "{} failed (signal)", trace)),
         }
 
+        Self::copy_bins(context, &krate_build_dir)?;
+
+        Ok(())
+    }
+
+    fn crate_build_dir(&self, trace: &str, crates_cache_dir: &Path) -> PathBuf {
+        let hash = {
+            // real trace will have "--root ...", but that depends on hash!
+            let trace_for_hash = format!("{} -- {}", trace, self.name);
+            #[allow(deprecated)]
+            let mut hasher = std::hash::SipHasher::new();
+            trace_for_hash.hash(&mut hasher);
+            format!("{:016x}", hasher.finish())
+        };
+
+        let krate_build_dir = crates_cache_dir.join(hash);
+        krate_build_dir
+    }
+
+    fn copy_bins(context: Context, krate_build_dir: &Path) -> Result<(), Error> {
+        let Context {
+            quiet,
+            verbose,
+            dst_bin,
+            ..
+        } = context;
+
         if let Err(err) = std::fs::create_dir_all(dst_bin) {
             if !quiet {
                 warnln!("Unable to create directory `{}`: {}", dst_bin.display(), err);
@@ -459,9 +484,9 @@ impl Install {
         } else if verbose {
             statusln!("Created", "`{}\\`", dst_bin.display());
         }
-
         let src_bin_path = krate_build_dir.join("bin");
         let src_bins = src_bin_path.read_dir().map_err(|err| error!(err, "unable to enumerate source bins at {}: {}", src_bin_path.display(), err))?;
+
         for src_bin in src_bins {
             let src_bin = src_bin.map_err(|err| error!(err, "error enumerating source bins at {}: {}", src_bin_path.display(), err))?;
             let dst_bin = dst_bin.join(src_bin.file_name());
