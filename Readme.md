@@ -35,7 +35,7 @@ Options are broadly similar to `cargo install`, with a few caveats:
 * `--locked` is *strongly* encouraged (warns by default unless it or `--unlocked` is used)
 * `--list`, `--no-track`, `--features`, `--bin`, and `--example` are not supported
 * `--frozen` and `--offline` are not supported (don't think they worked for `cargo install` either though!)
-* `-Z <FLAG>` is not supported
+* Direct CLI `-Z <FLAG>` arguments are not supported; use the per-dependency manifest syntax below instead
 
 Alternatively, you can specify workspace or package metadata in your Cargo.toml, similar to [[dependencies]](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html), which will be installed by `cargo local-install`:
 
@@ -47,6 +47,10 @@ cargo-web = { path = "../cargo-web" }
 cargo-web = { git = "https://github.com/koute/cargo-web" }
 cargo-web = { git = "https://github.com/koute/cargo-web", branch = "master" }
 cargo-web = { git = "https://github.com/koute/cargo-web", rev = "a9895bf536e8ac6a0806382886b7be90138f01f3" }
+tool = { version = "1.0", "-Z" = ["build-std", "unstable-options"] }
+
+# Each value in `-Z` is forwarded as a repeated `-Z <VALUE>` argument to Cargo.
+# This syntax applies to individual manifest dependencies.
 
 # not (yet?) implemented:
 #   features = [...]

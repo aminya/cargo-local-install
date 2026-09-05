@@ -37,6 +37,13 @@ pub(super) fn find_cwd_installs(maybe_dst_bin: Option<PathBuf>) -> Result<Vec<In
                                 if let Some(version) = detail.version {
                                     install.flags.push(InstallFlag::new("--version", vec![fix_version(&version).to_string()]));
                                 }
+                                if let Some(z_flags) = detail.unstable.get("-Z").and_then(|value| value.as_array()) {
+                                    for z_flag in z_flags {
+                                        if let Some(z_flag) = z_flag.as_str() {
+                                            install.flags.push(InstallFlag::new("-Z", vec![z_flag.to_string()]));
+                                        }
+                                    }
+                                }
                                 if let Some(registry) = detail.registry {
                                     install.flags.push(InstallFlag::new("--registry", vec![registry.into()]));
                                 }
@@ -152,5 +159,71 @@ fn fix_version(v: &str) -> String {
         String::from(format!("^{}", v)).into()
     } else {
         v.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestManifest {
+        directory: PathBuf,
+        previous_directory: PathBuf,
+    }
+
+    impl TestManifest {
+        fn create() -> Self {
+            let directory = std::env::temp_dir().join(format!(
+                "cargo-local-install-manifest-z-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir(&directory).unwrap();
+            std::fs::write(
+                directory.join("Cargo.toml"),
+                r#"
+[package]
+name = "manifest-z-test"
+version = "0.0.0"
+
+[package.metadata.local-install]
+tool = { version = "1.0", "-Z" = ["build-std", "unstable-options"] }
+"#,
+            )
+            .unwrap();
+
+            let previous_directory = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&directory).unwrap();
+            Self {
+                directory,
+                previous_directory,
+            }
+        }
+    }
+
+    impl Drop for TestManifest {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.previous_directory).unwrap();
+            std::fs::remove_dir_all(&self.directory).unwrap();
+        }
+    }
+
+    #[test]
+    fn forwards_manifest_z_flags_as_repeated_cargo_arguments() {
+        let _manifest = TestManifest::create();
+
+        let installs = find_cwd_installs(None).unwrap();
+
+        assert_eq!(
+            installs[0].installs[0].flags,
+            vec![
+                InstallFlag::new("--version", vec!["^1.0".to_string()]),
+                InstallFlag::new("-Z", vec!["build-std".to_string()]),
+                InstallFlag::new("-Z", vec!["unstable-options".to_string()]),
+            ]
+        );
     }
 }
